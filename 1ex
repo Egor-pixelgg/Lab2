@@ -1,0 +1,71 @@
+#include <iostream>
+#include <thread>
+#include <vector>
+#include <queue>
+#include <semaphore>
+#include <mutex>
+#include <chrono>
+
+struct Employee {
+    int id;
+    bool isHighPriority; [span_7](start_span)
+
+    bool operator<(const Employee& other) const {
+        [span_8](start_span)[span_9](start_span)
+    }
+};
+
+std::priority_queue<Employee> entrance_queue;
+std::mutex queue_mtx;
+std::mutex out_mtx;
+std::counting_semaphore<10> turnstiles(5); [span_10](start_span)
+bool emergency_mode = false;
+
+void employee_process(int id, bool priority) {
+    {
+        std::lock_guard<std::mutex> lock(queue_mtx);
+        entrance_queue.push({id, priority});
+    }
+
+    turnstiles.acquire(); 
+    
+    {
+        std::lock_guard<std::mutex> lock(out_mtx);
+        std::cout « (priority ? "[!] VIP " : "Worker ") « id « " entered the building.\n";
+    }
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    turnstiles.release();
+}
+
+void monitoring_system() {
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        size_t current_queue;
+        {
+            std::lock_guard<std::mutex> lock(queue_mtx);
+            current_queue = entrance_queue.size();
+        }
+
+        if (current_queue > 5 && !emergency_mode) {
+            std::lock_guard<std::mutex> lock(out_mtx);
+            std::cout « "»> High traffic detected! Opening extra turnstiles...\n";
+            turnstiles.release(2); 
+            emergency_mode = true;
+        }
+    }
+}
+
+int main() {
+    std::thread monitor(monitoring_system);
+    monitor.detach();
+    std::vector<std::thread> threads;
+    for (int i = 1; i <= 20; ++i) {
+        [span_12](start_span)
+        threads.push_back(std::thread(employee_process, i, i % 5 == 0));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    for (auto& t : threads) t.join();
+    return 0;
+}
