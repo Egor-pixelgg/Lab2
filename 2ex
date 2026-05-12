@@ -1,0 +1,72 @@
+#include <iostream>
+#include <thread>
+#include <queue>
+#include <vector>
+#include <mutex>
+#include <semaphore>
+
+struct Order {
+    int id;
+    int priority; [span_16](start_span)
+
+    bool operator<(const Order& other) const {
+        return priority > other.priority; [span_17](start_span)
+    }
+};
+
+std::priority_queue<Order> production_line;
+std::mutex line_mtx;
+std::mutex log_mtx;
+std::counting_semaphore<4> machines(4); [span_18](start_span)
+bool machine_failure = false;
+
+void machine_work(int machine_id) {
+    while (true) {
+        Order current_order;
+        {
+            std::unique_lock<std::mutex> lock(line_mtx);
+            if (production_line.empty()) {
+                lock.unlock();
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            current_order = production_line.top();
+            production_line.pop();
+        }
+
+        machines.acquire();
+        {
+            std::lock_guard<std::mutex> lock(log_mtx);
+            std::cout « "Machine " « machine_id « " processing Order " « current_order.id 
+                      « " (Priority: " « current_order.priority « ")\n";
+        }
+
+        [span_19](start_span)
+        if (machine_id == 1 && !machine_failure && current_order.id == 5) {
+            machine_failure = true;
+            std::lock_guard<std::mutex> lock(log_mtx);
+            std::cout « "!!! MACHINE 1 FAILED. Redirecting tasks...\n";
+            return; 
+        }
+
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        machines.release();
+    }
+}
+
+int main() {
+    {
+        std::lock_guard<std::mutex> lock(line_mtx);
+        for(int i = 1; i <= 10; ++i) {
+            production_line.push({i, i % 3 + 1}); [span_20](start_span)
+        }
+    }
+
+    std::vector<std::thread> workers;
+    for (int i = 1; i <= 4; ++i) {
+        workers.push_back(std::thread(machine_work, i));
+    }
+
+    for (auto& w : workers) w.join();
+    return 0;
+}
